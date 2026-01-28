@@ -170,7 +170,6 @@ export const SamplerDeck: React.FC = () => {
     const triggerNoteOff = (note: number) => {
         if (sustainRef.current) {
             sustainedNotesRef.current.add(note);
-            // Don't remove from visuals yet if sustained
             return; 
         }
 
@@ -185,16 +184,10 @@ export const SamplerDeck: React.FC = () => {
             return n; 
         });
 
-        // Stop sound if no notes are held (Monophonic logic)
-        // Ideally we check if *this* specific note was the last one triggered, 
-        // but for a simple sampler, stopping when all keys are up is a safe fallback.
         setTimeout(() => {
-             // check ref again in case of rapid changes
-             if (activeNotes.size <= 1) { // 1 because we just deleted one in the set updater above but state updates are async
+             if (activeNotes.size <= 1) { 
                  if (playerRef.current && playerRef.current.state === 'started') {
-                     // Allow decay
-                     // playerRef.current.stop("+"+decay); 
-                     // Or just let it fade out if envelope handles it, but Tone.Player needs explicit stop usually
+                     // Envelope handles decay usually
                  }
                  setIsPlaying(false);
              }
@@ -209,80 +202,82 @@ export const SamplerDeck: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col h-full gap-2">
+        <div className="flex flex-col h-full w-full gap-2 overflow-hidden">
             
-            {/* TOP PANEL: HARDWARE CONTROLLER VIEW */}
-            <div className="flex-1 bg-slate-900 rounded-xl border-t border-slate-700 shadow-2xl p-2 md:p-4 grid grid-cols-12 gap-4 min-h-0 overflow-hidden relative">
+            {/* TOP PANEL: Flexible Height (Takes remaining space) */}
+            {/* We remove fixed grid heights and use flex-1 to auto-fill space */}
+            <div className="flex-1 bg-slate-900 rounded-xl border-t border-slate-700 shadow-2xl p-2 grid grid-cols-12 gap-2 min-h-0 overflow-hidden relative">
                  {/* Texture */}
                  <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/dark-leather.png')] opacity-30 pointer-events-none"></div>
 
-                 {/* LEFT: DRUM PADS & RHYTHM (Col 1-3) */}
-                 <div className="col-span-12 md:col-span-3 flex flex-col gap-4 z-10">
-                     <div className="flex-1 bg-slate-950/50 rounded-lg p-2 border border-slate-800 shadow-inner">
+                 {/* LEFT: DRUM PADS & RHYTHM (Col 1-3 Desktop / Hidden on Small Mobile Portrait) */}
+                 <div className="col-span-12 md:col-span-4 lg:col-span-3 flex flex-col gap-2 z-10 min-h-0">
+                     <div className="flex-1 bg-slate-950/50 rounded-lg p-2 border border-slate-800 shadow-inner min-h-0 overflow-hidden flex flex-col justify-center">
                          <DrumPads />
                      </div>
-                     <RhythmControl />
+                     <div className="shrink-0">
+                        <RhythmControl />
+                     </div>
                  </div>
 
-                 {/* CENTER: SCREEN & LIBRARY (Col 4-9) */}
-                 <div className="col-span-12 md:col-span-6 flex flex-col gap-4 z-10 min-h-0">
-                     {/* LCD Screen */}
-                     <div className="h-32 bg-black rounded-t-lg border-x-2 border-t-2 border-slate-700 shadow-[inset_0_0_20px_rgba(0,0,0,0.8)] p-4 relative overflow-hidden flex flex-col justify-between shrink-0">
+                 {/* CENTER: SCREEN & LIBRARY (Col 4-9 Desktop) */}
+                 <div className="col-span-12 md:col-span-8 lg:col-span-6 flex flex-col gap-2 z-10 min-h-0">
+                     {/* LCD Screen - Height is flexible with max/min constraints */}
+                     <div className="shrink-0 h-24 lg:h-32 bg-black rounded-t-lg border-x-2 border-t-2 border-slate-700 shadow-[inset_0_0_20px_rgba(0,0,0,0.8)] p-3 lg:p-4 relative overflow-hidden flex flex-col justify-between">
                         {/* Scanlines */}
                         <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-20 bg-[length:100%_2px,3px_100%] pointer-events-none"></div>
                         
                         <div className="flex justify-between items-start z-30">
-                             <div className="flex flex-col">
-                                 <h2 className="text-cyan-600 font-tech text-[10px] tracking-widest mb-0.5">ACTIVE WAVEFORM</h2>
-                                 <div className="text-cyan-100 font-mono text-lg truncate max-w-[250px] tracking-tighter shadow-cyan-500/50 drop-shadow-[0_0_5px_rgba(6,182,212,0.8)]">
-                                    {status === AppStatus.LOADING ? <span className="animate-pulse">LOADING DATA...</span> : (fileName || "NO SAMPLE LOADED")}
+                             <div className="flex flex-col min-w-0">
+                                 <h2 className="text-cyan-600 font-tech text-[9px] lg:text-[10px] tracking-widest mb-0.5 whitespace-nowrap">ACTIVE WAVEFORM</h2>
+                                 <div className="text-cyan-100 font-mono text-base lg:text-lg truncate max-w-full tracking-tighter shadow-cyan-500/50 drop-shadow-[0_0_5px_rgba(6,182,212,0.8)]">
+                                    {status === AppStatus.LOADING ? <span className="animate-pulse">LOADING...</span> : (fileName || "NO DATA")}
                                  </div>
                              </div>
-                             <div className={`px-2 py-0.5 rounded text-[9px] font-bold border ${midiEnabled ? 'bg-cyan-900/30 border-cyan-500 text-cyan-400' : 'bg-red-900/30 border-red-500 text-red-400'}`}>
+                             <div className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[8px] lg:text-[9px] font-bold border ${midiEnabled ? 'bg-cyan-900/30 border-cyan-500 text-cyan-400' : 'bg-red-900/30 border-red-500 text-red-400'}`}>
                                  {midiEnabled ? 'MIDI LINK' : 'NO MIDI'}
                              </div>
                         </div>
                         
-                        <div className="w-full h-12 relative z-10 opacity-80">
+                        <div className="w-full h-8 lg:h-12 relative z-10 opacity-80 mt-1">
                             <Visualizer isActive={isPlaying} />
                         </div>
                      </div>
 
-                     {/* Library Browser - Styled as Hardware Interface */}
-                     <div className="flex-1 min-h-0 bg-slate-950 border-x-2 border-b-2 border-slate-700 rounded-b-lg p-1 relative shadow-inner">
+                     {/* Library Browser - Takes all remaining vertical space in this column */}
+                     <div className="flex-1 min-h-0 bg-slate-950 border-x-2 border-b-2 border-slate-700 rounded-b-lg p-1 relative shadow-inner overflow-hidden flex flex-col">
                          <CloudLibrary onLoadSample={loadSample} />
                      </div>
                  </div>
 
-                 {/* RIGHT: KNOBS & FADERS (Col 10-12) */}
-                 <div className="col-span-12 md:col-span-3 flex flex-col gap-4 z-10 bg-gradient-to-b from-slate-800 to-slate-900 rounded-lg p-2 border border-slate-700 shadow-xl">
-                     <div className="text-[10px] text-center text-slate-400 font-tech tracking-[0.2em] border-b border-slate-700 pb-1 mb-2">GLOBAL PARAMS</div>
-                     <div className="grid grid-cols-2 gap-y-6 gap-x-2 justify-items-center py-2 flex-1 content-start">
-                        <Knob label="MASTER VOL" min={0} max={1} value={volume} onChange={setVolume} cc={7} />
-                        <Knob label="CUTOFF" min={20} max={20000} value={filterFreq} onChange={setFilterFreq} cc={74} />
-                        <Knob label="ATTACK" min={0} max={2} value={attack} onChange={setAttack} cc={73} />
-                        <Knob label="DECAY" min={0} max={2} value={decay} onChange={setDecay} cc={72} />
+                 {/* RIGHT: KNOBS & FADERS (Col 10-12 Desktop / Moved or stacked on mobile) */}
+                 {/* Hidden on very small screens or stacked */}
+                 <div className="hidden lg:flex col-span-3 flex-col gap-2 z-10 bg-gradient-to-b from-slate-800 to-slate-900 rounded-lg p-2 border border-slate-700 shadow-xl min-h-0">
+                     <div className="text-[10px] text-center text-slate-400 font-tech tracking-[0.2em] border-b border-slate-700 pb-1 mb-1 shrink-0">GLOBAL</div>
+                     <div className="grid grid-cols-2 gap-2 content-start overflow-y-auto flex-1 p-1">
+                        <Knob label="VOL" min={0} max={1} value={volume} onChange={setVolume} cc={7} />
+                        <Knob label="CUT" min={20} max={20000} value={filterFreq} onChange={setFilterFreq} cc={74} />
+                        <Knob label="ATK" min={0} max={2} value={attack} onChange={setAttack} cc={73} />
+                        <Knob label="DEC" min={0} max={2} value={decay} onChange={setDecay} cc={72} />
                      </div>
 
-                     <div className="mt-auto p-3 bg-black/40 rounded border border-slate-800">
-                         <div className="flex items-center justify-between mb-2">
-                            <span className="text-[9px] text-amber-500 font-bold tracking-wider">SMART CHORD</span>
+                     <div className="shrink-0 mt-auto p-2 bg-black/40 rounded border border-slate-800">
+                         <div className="flex items-center justify-between">
+                            <span className="text-[8px] text-amber-500 font-bold tracking-wider">SMART CHORD</span>
                             <button 
                                 onClick={() => setSmartChordMode(!smartChordMode)}
-                                className={`w-8 h-4 rounded-full transition-colors relative ${smartChordMode ? 'bg-amber-600' : 'bg-slate-700'}`}
+                                className={`w-6 h-3 rounded-full transition-colors relative ${smartChordMode ? 'bg-amber-600' : 'bg-slate-700'}`}
                             >
-                                <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${smartChordMode ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                <div className={`absolute top-0.5 left-0.5 w-2 h-2 bg-white rounded-full shadow-md transform transition-transform ${smartChordMode ? 'translate-x-3' : 'translate-x-0'}`}></div>
                             </button>
-                         </div>
-                         <div className="text-[8px] text-slate-500 font-mono leading-tight">
-                             AI Harmonizer active on low octaves.
                          </div>
                      </div>
                  </div>
             </div>
 
-            {/* BOTTOM PANEL: KEYBOARD */}
-            <div className="h-48 md:h-64 flex-none z-20">
+            {/* BOTTOM PANEL: KEYBOARD (Dynamic Height) */}
+            {/* Height is between 25% and 40% of screen height, constrained by min/max px */}
+            <div className="flex-none z-20 h-[35vh] min-h-[160px] max-h-[300px]">
                 <VirtualKeyboard 
                     activeNotes={activeNotes}
                     onNoteOn={triggerNoteOn}
