@@ -1,4 +1,5 @@
-import { initializeApp } from 'firebase/app';
+
+import * as firebaseApp from 'firebase/app';
 import { getStorage } from 'firebase/storage';
 
 // --------------------------------------------------------
@@ -20,6 +21,9 @@ const firebaseConfig = {
 let app;
 let storage;
 let isConfigured = false;
+
+// Workaround for potential type definition mismatch where initializeApp is not found
+const initializeApp = (firebaseApp as any).initializeApp;
 
 try {
     if (firebaseConfig.apiKey !== "REPLACE_WITH_YOUR_API_KEY") {

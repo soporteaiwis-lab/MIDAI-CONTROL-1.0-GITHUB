@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { storage, isConfigured } from '../firebase';
-import { ref, uploadBytes, listAll, getDownloadURL } from 'firebase/storage';
 
 interface CloudLibraryProps {
     onLoadSample: (url: string, name: string) => void;
@@ -10,24 +8,21 @@ interface LibraryItem {
     id: string;
     name: string;
     category: string;
-    url: string; // Blob URL or Firebase URL
+    url: string; 
     isLocal: boolean;
 }
 
-// Fixed Categories as requested
 const CATEGORIES = [
-    'Bass',
-    'Cymbals',
+    'User Uploads',
     'Drums',
-    'Ethnic',
-    'Guitar',
-    'Loops',
-    'Orchestral',
-    'Sound Effects'
+    'Bass',
+    'Synths',
+    'FX',
+    'Orchestral'
 ];
 
-// --- Simple IndexedDB Helper for Persistence ---
-const DB_NAME = 'midAI_Library_DB';
+// --- IndexedDB Logic (Same as before, just ensured stability) ---
+const DB_NAME = 'midAI_Library_DB_v2';
 const STORE_NAME = 'samples';
 
 const initDB = (): Promise<IDBDatabase> => {
@@ -47,9 +42,7 @@ const initDB = (): Promise<IDBDatabase> => {
 const saveToLocalDB = async (item: LibraryItem, blob: Blob) => {
     const db = await initDB();
     const tx = db.transaction(STORE_NAME, 'readwrite');
-    // Store the file blob directly
     tx.objectStore(STORE_NAME).put({ ...item, blob });
-    
     return new Promise<void>((resolve, reject) => {
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
@@ -63,11 +56,10 @@ const getAllFromLocalDB = async (): Promise<LibraryItem[]> => {
         const request = tx.objectStore(STORE_NAME).getAll();
         request.onsuccess = () => {
             const results = request.result || [];
-            // Convert stored Blobs back to URLs
             const items = results.map((r: any) => ({
                 id: r.id,
                 name: r.name,
-                category: r.category,
+                category: 'User Uploads', // Force local uploads to this category
                 isLocal: true,
                 url: URL.createObjectURL(r.blob)
             }));
@@ -80,178 +72,145 @@ const getAllFromLocalDB = async (): Promise<LibraryItem[]> => {
 
 export const CloudLibrary: React.FC<CloudLibraryProps> = ({ onLoadSample }) => {
     const [library, setLibrary] = useState<LibraryItem[]>([]);
-    const [openCategories, setOpenCategories] = useState<Set<string>>(new Set(['Drums', 'Bass'])); // Default open
-    const [selectedCategory, setSelectedCategory] = useState<string>('Drums'); // For upload
+    const [activeCategory, setActiveCategory] = useState<string>('Drums');
     const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [selectedId, setSelectedId] = useState<string | null>(null);
 
     // Initial Load
     useEffect(() => {
-        loadLibrary();
+        const load = async () => {
+            const items: LibraryItem[] = [];
+            
+            // Demos
+            const demos: LibraryItem[] = [
+                 { id: 'd1', name: 'Kick_Hard_01', category: 'Drums', isLocal: false, url: 'https://tonejs.github.io/audio/drum-samples/acoustic-kit/kick.mp3' },
+                 { id: 'd2', name: 'Snare_Dry', category: 'Drums', isLocal: false, url: 'https://tonejs.github.io/audio/drum-samples/acoustic-kit/snare.mp3' },
+                 { id: 'd3', name: 'HiHat_Closed', category: 'Drums', isLocal: false, url: 'https://tonejs.github.io/audio/drum-samples/acoustic-kit/hihat.mp3' },
+                 { id: 'd4', name: 'Piano_C4_Clean', category: 'Orchestral', isLocal: false, url: 'https://tonejs.github.io/audio/salamander/C4.mp3' },
+                 { id: 'd5', name: 'Bass_Upright', category: 'Bass', isLocal: false, url: 'https://tonejs.github.io/audio/berklee/Pbass_1.mp3' },
+                 { id: 'd6', name: 'Industrial_Loop', category: 'FX', isLocal: false, url: 'https://tonejs.github.io/audio/loop/industrial.mp3' },
+                 { id: 'd7', name: 'Synth_Pulse_A', category: 'Synths', isLocal: false, url: 'https://tonejs.github.io/audio/casio/A1.mp3' },
+            ];
+            items.push(...demos);
+
+            try {
+                const localItems = await getAllFromLocalDB();
+                items.push(...localItems);
+            } catch (e) { console.error(e); }
+
+            setLibrary(items);
+        };
+        load();
     }, []);
-
-    const loadLibrary = async () => {
-        const items: LibraryItem[] = [];
-
-        // 1. Load Local DB Samples (Persistent)
-        try {
-            const localItems = await getAllFromLocalDB();
-            items.push(...localItems);
-        } catch (e) {
-            console.error("Local DB error", e);
-        }
-
-        // 2. Load Demo Samples (Static)
-        const demos: LibraryItem[] = [
-             { id: 'd1', name: 'Acoustic Kick', category: 'Drums', isLocal: false, url: 'https://tonejs.github.io/audio/drum-samples/acoustic-kit/kick.mp3' },
-             { id: 'd2', name: 'Acoustic Snare', category: 'Drums', isLocal: false, url: 'https://tonejs.github.io/audio/drum-samples/acoustic-kit/snare.mp3' },
-             { id: 'd3', name: 'HiHat Closed', category: 'Cymbals', isLocal: false, url: 'https://tonejs.github.io/audio/drum-samples/acoustic-kit/hihat.mp3' },
-             { id: 'd4', name: 'Salamander Piano C4', category: 'Orchestral', isLocal: false, url: 'https://tonejs.github.io/audio/salamander/C4.mp3' },
-             { id: 'd5', name: 'Upright Bass', category: 'Bass', isLocal: false, url: 'https://tonejs.github.io/audio/berklee/Pbass_1.mp3' },
-             { id: 'd6', name: 'Industrial Loop', category: 'Loops', isLocal: false, url: 'https://tonejs.github.io/audio/loop/industrial.mp3' },
-        ];
-        // Only add demos if not duplicate IDs (simple check)
-        demos.forEach(d => items.push(d));
-
-        setLibrary(items);
-    };
-
-    const toggleCategory = (cat: string) => {
-        setOpenCategories(prev => {
-            const next = new Set(prev);
-            if (next.has(cat)) next.delete(cat);
-            else next.add(cat);
-            return next;
-        });
-    };
-
-    const handleUploadClick = () => {
-        fileInputRef.current?.click();
-    };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
-        
         const file = e.target.files[0];
         setUploading(true);
         
         const newItem: LibraryItem = {
             id: Date.now().toString(),
-            name: file.name.replace(/\.[^/.]+$/, ""), // remove extension
-            category: selectedCategory,
+            name: file.name.replace(/\.[^/.]+$/, "").substring(0, 20),
+            category: 'User Uploads',
             isLocal: true,
-            url: URL.createObjectURL(file) // Temp URL
+            url: URL.createObjectURL(file)
         };
 
         try {
-            // Save to Local DB (Persistent)
             await saveToLocalDB(newItem, file);
-
-            // Update UI
             setLibrary(prev => [...prev, newItem]);
-            // Ensure category is open
-            setOpenCategories(prev => new Set(prev).add(selectedCategory));
-            
-            console.log("File saved to Local DB");
+            setActiveCategory('User Uploads');
+            // Auto select newly uploaded
+            setSelectedId(newItem.id);
+            onLoadSample(newItem.url, newItem.name);
         } catch (err) {
-            console.error("Failed to save locally", err);
-            alert("Could not save to local database.");
+            alert("Storage limit reached or error.");
         } finally {
             setUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
-    return (
-        <div className="w-full bg-slate-900 rounded-xl border border-slate-800 overflow-hidden flex flex-col h-[500px]">
-             {/* Header */}
-             <div className="p-4 bg-slate-950 border-b border-slate-800">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-tech text-slate-200 tracking-wider text-sm flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-cyan-500">
-                            <path d="M19.5 21a3 3 0 003-3v-4.5a3 3 0 00-3-3h-15a3 3 0 00-3 3V18a3 3 0 003 3h15zM1.5 10.146V2.995c0-1.103.895-2 2-2h2.445c.69 0 1.33.344 1.76 1.05L10 6h4.5a2 2 0 012 2v2.146A4.5 4.5 0 001.5 10.146z" />
-                        </svg>
-                        LIBRARY
-                    </h3>
-                </div>
+    const handleSelectSample = (item: LibraryItem) => {
+        setSelectedId(item.id);
+        onLoadSample(item.url, item.name);
+    };
 
-                {/* Upload Section */}
-                <div className="flex gap-2">
-                    <select 
-                        value={selectedCategory} 
-                        onChange={(e) => setSelectedCategory(e.target.value)}
-                        className="bg-slate-800 text-[10px] text-slate-300 rounded border border-slate-700 px-2 py-1 flex-1 focus:outline-none focus:border-cyan-500"
-                    >
-                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
+    const filteredItems = library.filter(i => i.category === activeCategory);
+
+    return (
+        <div className="flex flex-col h-full bg-black text-cyan-500 font-mono text-xs select-none">
+             {/* Header / Action Bar */}
+             <div className="flex items-center justify-between p-2 border-b border-slate-800 bg-slate-900/50">
+                 <div className="flex items-center gap-2">
+                     <span className="text-[10px] text-slate-500 font-tech tracking-wider">BROWSER // </span>
+                     <span className="text-cyan-300 font-bold">{activeCategory.toUpperCase()}</span>
+                 </div>
+                 <div>
                     <input type="file" accept="audio/*" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
                     <button 
-                        onClick={handleUploadClick}
+                        onClick={() => fileInputRef.current?.click()}
                         disabled={uploading}
-                        className="bg-cyan-600 hover:bg-cyan-500 text-white text-[10px] font-bold px-3 py-1 rounded transition-colors flex items-center gap-1"
+                        className="bg-cyan-900/40 hover:bg-cyan-500 hover:text-black border border-cyan-700/50 text-cyan-400 px-3 py-1 rounded-sm text-[9px] font-bold transition-all uppercase tracking-wide flex items-center gap-1"
                     >
-                        {uploading ? '...' : '+ ADD'}
+                        {uploading ? 'UPLOADING...' : '[ + IMPORT SAMPLE ]'}
                     </button>
-                </div>
+                 </div>
              </div>
 
-             {/* Tree View */}
-             <div className="flex-1 overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-slate-700">
-                 {CATEGORIES.map(category => {
-                     const catItems = library.filter(i => i.category === category);
-                     const isOpen = openCategories.has(category);
-                     
-                     return (
-                         <div key={category} className="mb-1">
-                             <button 
-                                onClick={() => toggleCategory(category)}
-                                className="w-full flex items-center gap-2 p-2 hover:bg-slate-800 rounded text-left transition-colors group"
-                             >
-                                 <svg 
-                                    xmlns="http://www.w3.org/2000/svg" 
-                                    viewBox="0 0 20 20" 
-                                    fill="currentColor" 
-                                    className={`w-3 h-3 text-slate-500 transition-transform ${isOpen ? 'rotate-90' : ''}`}
-                                 >
-                                     <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                                 </svg>
-                                 <span className={`text-xs font-bold ${isOpen ? 'text-cyan-100' : 'text-slate-500 group-hover:text-slate-300'}`}>
-                                     {category}
-                                 </span>
-                                 <span className="text-[9px] text-slate-600 ml-auto bg-slate-800 px-1.5 rounded-full">
-                                     {catItems.length}
-                                 </span>
-                             </button>
+             {/* Main Browser View */}
+             <div className="flex-1 flex min-h-0">
+                 {/* Left Column: Categories */}
+                 <div className="w-1/3 border-r border-slate-800 bg-slate-950 flex flex-col overflow-y-auto scrollbar-none">
+                     {CATEGORIES.map(cat => (
+                         <button
+                            key={cat}
+                            onClick={() => setActiveCategory(cat)}
+                            className={`px-3 py-2 text-left truncate transition-colors border-l-2 ${activeCategory === cat ? 'bg-cyan-900/20 text-white border-cyan-500' : 'text-slate-500 border-transparent hover:text-slate-300 hover:bg-white/5'}`}
+                         >
+                            {activeCategory === cat && <span className="mr-1 text-cyan-500">›</span>}
+                            {cat}
+                         </button>
+                     ))}
+                 </div>
 
-                             {isOpen && (
-                                 <div className="ml-4 pl-2 border-l border-slate-800 mt-1 flex flex-col gap-0.5">
-                                     {catItems.length === 0 ? (
-                                         <div className="p-2 text-[10px] text-slate-600 italic">Empty</div>
-                                     ) : (
-                                         catItems.map(item => (
-                                             <button
-                                                key={item.id}
-                                                onClick={() => onLoadSample(item.url, item.name)}
-                                                className="flex items-center justify-between p-2 rounded hover:bg-slate-800/50 hover:border-l-2 hover:border-cyan-500 transition-all text-left group/item"
-                                             >
-                                                 <span className="text-[11px] text-slate-400 group-hover/item:text-white truncate">
-                                                     {item.name}
-                                                 </span>
-                                                 {item.isLocal && (
-                                                     <span className="text-[8px] text-emerald-500 font-mono opacity-50">LOCAL</span>
-                                                 )}
-                                             </button>
-                                         ))
-                                     )}
-                                 </div>
-                             )}
+                 {/* Right Column: Files */}
+                 <div className="w-2/3 bg-black flex flex-col overflow-y-auto relative">
+                     {/* Background Grid */}
+                     <div className="absolute inset-0 bg-[linear-gradient(rgba(20,20,20,1)_1px,transparent_1px),linear-gradient(90deg,rgba(20,20,20,1)_1px,transparent_1px)] bg-[size:20px_20px] pointer-events-none"></div>
+
+                     {filteredItems.length === 0 ? (
+                         <div className="flex flex-col items-center justify-center h-full text-slate-600">
+                             <span className="mb-2 opacity-50 text-2xl">∅</span>
+                             <span>NO DATA FOUND</span>
                          </div>
-                     );
-                 })}
+                     ) : (
+                         <div className="flex flex-col p-1 z-10">
+                             {filteredItems.map(item => (
+                                 <button
+                                    key={item.id}
+                                    onClick={() => handleSelectSample(item)}
+                                    className={`flex items-center justify-between p-2 mb-1 rounded-sm border border-transparent group transition-all
+                                        ${selectedId === item.id 
+                                            ? 'bg-cyan-500/10 border-cyan-500/50 text-cyan-100 shadow-[0_0_10px_rgba(6,182,212,0.1)]' 
+                                            : 'hover:bg-slate-900 text-slate-400 hover:text-slate-200'
+                                        }
+                                    `}
+                                 >
+                                     <span className="truncate">{item.name}</span>
+                                     {item.isLocal && <span className="text-[8px] bg-slate-800 text-slate-400 px-1 rounded">USR</span>}
+                                 </button>
+                             ))}
+                         </div>
+                     )}
+                 </div>
              </div>
-             
-             <div className="p-2 border-t border-slate-800 bg-slate-950 text-[10px] text-center text-slate-500 font-mono">
-                 Auto-saved to Browser Database
+
+             {/* Footer Info */}
+             <div className="p-1 bg-slate-900 border-t border-slate-800 flex justify-between text-[9px] text-slate-600 font-mono">
+                 <span>ITEMS: {filteredItems.length}</span>
+                 <span>DB: {uploading ? 'WRITING...' : 'READY'}</span>
              </div>
         </div>
     );
