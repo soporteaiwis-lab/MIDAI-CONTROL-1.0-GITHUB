@@ -1,13 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Header } from './components/Header';
 import { SamplerDeck } from './components/SamplerDeck';
+import { DeviceMonitor } from './components/DeviceMonitor';
 
 const App: React.FC = () => {
+  const [showDevices, setShowDevices] = useState(false);
+
   return (
     // h-[100dvh] ensures it fits perfectly on mobile browsers with dynamic address bars
     <div className="h-[100dvh] w-screen bg-slate-950 flex flex-col overflow-hidden select-none touch-none">
       <div className="flex-none z-50">
-          <Header />
+          <Header onOpenDevices={() => setShowDevices(true)} />
       </div>
       
       {/* Main Workspace - Flex Grow to take remaining height */}
@@ -19,6 +22,8 @@ const App: React.FC = () => {
             <SamplerDeck />
         </div>
       </main>
+
+      <DeviceMonitor isOpen={showDevices} onClose={() => setShowDevices(false)} />
     </div>
   );
 };

@@ -1,6 +1,10 @@
 import React from 'react';
 
-export const Header: React.FC = () => {
+interface HeaderProps {
+    onOpenDevices?: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({ onOpenDevices }) => {
   return (
     <header className="w-full py-2 px-4 md:px-6 flex justify-between items-center bg-slate-900/90 backdrop-blur-md border-b border-cyan-900/30 sticky top-0 z-50 h-12 md:h-14 shrink-0">
       <div className="flex items-center gap-2 select-none">
@@ -19,10 +23,14 @@ export const Header: React.FC = () => {
       </div>
       
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
-            <span className="text-[9px] md:text-[10px] text-slate-300 font-mono hidden sm:inline">SYSTEM ONLINE</span>
-        </div>
+        {/* Device Status Button */}
+        <button 
+            onClick={onOpenDevices}
+            className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 hover:border-cyan-500/50 hover:bg-slate-700 transition-all group cursor-pointer"
+        >
+            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse group-hover:shadow-[0_0_8px_#22c55e]"></div>
+            <span className="text-[9px] md:text-[10px] text-slate-300 font-mono hidden sm:inline group-hover:text-white">SYSTEM STATUS</span>
+        </button>
       </div>
     </header>
   );

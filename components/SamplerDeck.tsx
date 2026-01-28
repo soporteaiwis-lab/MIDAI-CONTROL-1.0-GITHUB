@@ -221,7 +221,7 @@ export const SamplerDeck: React.FC = () => {
                  </div>
 
                  {/* CENTER: SCREEN & LIBRARY (Col 4-9 Desktop) */}
-                 <div className="col-span-12 md:col-span-8 lg:col-span-6 flex flex-col gap-2 z-10 min-h-0">
+                 <div className="col-span-12 md:col-span-8 lg:col-span-6 flex flex-col gap-2 z-10 min-h-0 overflow-hidden">
                      {/* LCD Screen - Height is flexible with max/min constraints */}
                      <div className="shrink-0 h-24 lg:h-32 bg-black rounded-t-lg border-x-2 border-t-2 border-slate-700 shadow-[inset_0_0_20px_rgba(0,0,0,0.8)] p-3 lg:p-4 relative overflow-hidden flex flex-col justify-between">
                         {/* Scanlines */}
@@ -245,7 +245,8 @@ export const SamplerDeck: React.FC = () => {
                      </div>
 
                      {/* Library Browser - Takes all remaining vertical space in this column */}
-                     <div className="flex-1 min-h-0 bg-slate-950 border-x-2 border-b-2 border-slate-700 rounded-b-lg p-1 relative shadow-inner overflow-hidden flex flex-col">
+                     {/* Added shrink-1 to allow it to compress if needed, but min-h-0 prevents it from overflowing parent */}
+                     <div className="flex-1 min-h-0 bg-slate-950 border-x-2 border-b-2 border-slate-700 rounded-b-lg p-1 relative shadow-inner overflow-hidden flex flex-col shrink-1">
                          <CloudLibrary onLoadSample={loadSample} />
                      </div>
                  </div>
@@ -276,8 +277,8 @@ export const SamplerDeck: React.FC = () => {
             </div>
 
             {/* BOTTOM PANEL: KEYBOARD (Dynamic Height) */}
-            {/* Height is between 25% and 40% of screen height, constrained by min/max px */}
-            <div className="flex-none z-20 h-[35vh] min-h-[160px] max-h-[300px]">
+            {/* Reduced max-height and default vh to ensure top panel doesn't get squeezed too much */}
+            <div className="flex-none z-20 h-[30vh] min-h-[140px] max-h-[280px]">
                 <VirtualKeyboard 
                     activeNotes={activeNotes}
                     onNoteOn={triggerNoteOn}
