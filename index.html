@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>midAI-Control 1.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
@@ -13,13 +13,14 @@
         background-color: #0f172a;
         color: white;
         overscroll-behavior: none; /* Prevent pull-to-refresh on mobile */
+        touch-action: none; /* Disable browser handling of gestures */
       }
       .font-tech {
         font-family: 'Orbitron', sans-serif;
       }
       /* Custom Scrollbar */
       ::-webkit-scrollbar {
-        width: 6px;
+        width: 4px;
       }
       ::-webkit-scrollbar-track {
         background: #0f172a;
@@ -30,6 +31,16 @@
       }
       ::-webkit-scrollbar-thumb:hover {
         background: #475569;
+      }
+      
+      /* Landscape Mobile Specific Tweaks */
+      @media (max-height: 500px) and (orientation: landscape) {
+        .landscape-compact {
+           display: none !important;
+        }
+        .landscape-flex-row {
+           flex-direction: row !important;
+        }
       }
     </style>
   <script type="importmap">
