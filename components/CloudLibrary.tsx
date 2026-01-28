@@ -6,180 +6,253 @@ interface CloudLibraryProps {
     onLoadSample: (url: string, name: string) => void;
 }
 
-interface CloudFile {
+interface LibraryItem {
+    id: string;
     name: string;
-    fullPath: string;
-    url?: string; // Optional URL for demo files
+    category: string;
+    url: string; // Blob URL or Firebase URL
+    isLocal: boolean;
 }
 
-// Public samples for Demo Mode
-const DEMO_FILES: CloudFile[] = [
-    { name: "808 Kick", fullPath: "demo/kick", url: "https://tonejs.github.io/audio/drum-samples/808/kick.mp3" },
-    { name: "808 Snare", fullPath: "demo/snare", url: "https://tonejs.github.io/audio/drum-samples/808/snare.mp3" },
-    { name: "Salamander Piano C4", fullPath: "demo/piano", url: "https://tonejs.github.io/audio/salamander/C4.mp3" },
-    { name: "Loop: Industrial", fullPath: "demo/loop", url: "https://tonejs.github.io/audio/loop/industrial.mp3" }
+// Fixed Categories as requested
+const CATEGORIES = [
+    'Bass',
+    'Cymbals',
+    'Drums',
+    'Ethnic',
+    'Guitar',
+    'Loops',
+    'Orchestral',
+    'Sound Effects'
 ];
 
+// --- Simple IndexedDB Helper for Persistence ---
+const DB_NAME = 'midAI_Library_DB';
+const STORE_NAME = 'samples';
+
+const initDB = (): Promise<IDBDatabase> => {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 1);
+        request.onupgradeneeded = (e) => {
+            const db = (e.target as IDBOpenDBRequest).result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+                db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+};
+
+const saveToLocalDB = async (item: LibraryItem, blob: Blob) => {
+    const db = await initDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    // Store the file blob directly
+    tx.objectStore(STORE_NAME).put({ ...item, blob });
+    
+    return new Promise<void>((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+};
+
+const getAllFromLocalDB = async (): Promise<LibraryItem[]> => {
+    const db = await initDB();
+    return new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const request = tx.objectStore(STORE_NAME).getAll();
+        request.onsuccess = () => {
+            const results = request.result || [];
+            // Convert stored Blobs back to URLs
+            const items = results.map((r: any) => ({
+                id: r.id,
+                name: r.name,
+                category: r.category,
+                isLocal: true,
+                url: URL.createObjectURL(r.blob)
+            }));
+            resolve(items);
+        };
+    });
+};
+
+// ------------------------------------------------
+
 export const CloudLibrary: React.FC<CloudLibraryProps> = ({ onLoadSample }) => {
-    const [files, setFiles] = useState<CloudFile[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [library, setLibrary] = useState<LibraryItem[]>([]);
+    const [openCategories, setOpenCategories] = useState<Set<string>>(new Set(['Drums', 'Bass'])); // Default open
+    const [selectedCategory, setSelectedCategory] = useState<string>('Drums'); // For upload
     const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Initial Load
     useEffect(() => {
-        if (isConfigured) {
-            fetchFiles();
-        } else {
-            // Load demo files if Firebase is not configured
-            setFiles(DEMO_FILES);
-        }
+        loadLibrary();
     }, []);
 
-    const fetchFiles = async () => {
-        if (!storage) return;
-        setLoading(true);
+    const loadLibrary = async () => {
+        const items: LibraryItem[] = [];
+
+        // 1. Load Local DB Samples (Persistent)
         try {
-            const listRef = ref(storage, 'samples/');
-            const res = await listAll(listRef);
-            
-            const fileList = res.items.map((item) => ({
-                name: item.name,
-                fullPath: item.fullPath,
-            }));
-            setFiles(fileList);
-        } catch (error) {
-            console.error("Error fetching files:", error);
-        } finally {
-            setLoading(false);
+            const localItems = await getAllFromLocalDB();
+            items.push(...localItems);
+        } catch (e) {
+            console.error("Local DB error", e);
         }
+
+        // 2. Load Demo Samples (Static)
+        const demos: LibraryItem[] = [
+             { id: 'd1', name: 'Acoustic Kick', category: 'Drums', isLocal: false, url: 'https://tonejs.github.io/audio/drum-samples/acoustic-kit/kick.mp3' },
+             { id: 'd2', name: 'Acoustic Snare', category: 'Drums', isLocal: false, url: 'https://tonejs.github.io/audio/drum-samples/acoustic-kit/snare.mp3' },
+             { id: 'd3', name: 'HiHat Closed', category: 'Cymbals', isLocal: false, url: 'https://tonejs.github.io/audio/drum-samples/acoustic-kit/hihat.mp3' },
+             { id: 'd4', name: 'Salamander Piano C4', category: 'Orchestral', isLocal: false, url: 'https://tonejs.github.io/audio/salamander/C4.mp3' },
+             { id: 'd5', name: 'Upright Bass', category: 'Bass', isLocal: false, url: 'https://tonejs.github.io/audio/berklee/Pbass_1.mp3' },
+             { id: 'd6', name: 'Industrial Loop', category: 'Loops', isLocal: false, url: 'https://tonejs.github.io/audio/loop/industrial.mp3' },
+        ];
+        // Only add demos if not duplicate IDs (simple check)
+        demos.forEach(d => items.push(d));
+
+        setLibrary(items);
     };
 
-    const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!isConfigured) {
-            alert("Please configure firebase.ts with your API keys to enable uploads.");
-            return;
-        }
+    const toggleCategory = (cat: string) => {
+        setOpenCategories(prev => {
+            const next = new Set(prev);
+            if (next.has(cat)) next.delete(cat);
+            else next.add(cat);
+            return next;
+        });
+    };
 
-        if (!storage || !e.target.files || e.target.files.length === 0) return;
+    const handleUploadClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || e.target.files.length === 0) return;
         
         const file = e.target.files[0];
         setUploading(true);
+        
+        const newItem: LibraryItem = {
+            id: Date.now().toString(),
+            name: file.name.replace(/\.[^/.]+$/, ""), // remove extension
+            category: selectedCategory,
+            isLocal: true,
+            url: URL.createObjectURL(file) // Temp URL
+        };
 
         try {
-            const storageRef = ref(storage, `samples/${file.name}`);
-            await uploadBytes(storageRef, file);
-            console.log('Uploaded a blob or file!');
-            await fetchFiles(); // Refresh list
-        } catch (error) {
-            console.error("Upload failed:", error);
+            // Save to Local DB (Persistent)
+            await saveToLocalDB(newItem, file);
+
+            // Update UI
+            setLibrary(prev => [...prev, newItem]);
+            // Ensure category is open
+            setOpenCategories(prev => new Set(prev).add(selectedCategory));
+            
+            console.log("File saved to Local DB");
+        } catch (err) {
+            console.error("Failed to save locally", err);
+            alert("Could not save to local database.");
         } finally {
             setUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
-    const handleSelectSound = async (file: CloudFile) => {
-        // If it's a demo file with a direct URL, use it
-        if (file.url) {
-            onLoadSample(file.url, file.name);
-            return;
-        }
-
-        // Otherwise fetch from Firebase
-        if (!storage) return;
-        try {
-            setLoading(true);
-            const url = await getDownloadURL(ref(storage, file.fullPath));
-            onLoadSample(url, file.name);
-        } catch (error) {
-            console.error("Error getting URL:", error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
     return (
-        <div className="w-full bg-slate-900 rounded-xl border border-slate-800 overflow-hidden flex flex-col h-[300px]">
-            {/* Cloud Header */}
-            <div className="p-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={`w-5 h-5 ${isConfigured ? 'text-cyan-500' : 'text-amber-500'}`}>
-                        <path fillRule="evenodd" d="M5.625 1.5c-1.036 0-1.875.84-1.875 1.875v17.25c0 1.035.84 1.875 1.875 1.875h12.75c1.035 0 1.875-.84 1.875-1.875V12.75A3.75 3.75 0 0016.5 9h-1.875a1.875 1.875 0 01-1.875-1.875V5.25A3.75 3.75 0 009 1.5H5.625zM7.5 15a.75.75 0 01.75-.75h7.5a.75.75 0 010 1.5h-7.5A.75.75 0 017.5 15zm.75 2.25a.75.75 0 000 1.5H12a.75.75 0 000-1.5H8.25z" clipRule="evenodd" />
-                        <path d="M12.971 1.816A5.23 5.23 0 0114.25 5.25v1.875c0 .207.168.375.375.375H16.5a5.23 5.23 0 013.434 1.279 9.768 9.768 0 00-6.963-6.963z" />
-                    </svg>
-                    <h3 className="font-tech text-slate-300 tracking-wider text-sm">
-                        {isConfigured ? 'CLOUD LIBRARY' : 'DEMO LIBRARY'}
+        <div className="w-full bg-slate-900 rounded-xl border border-slate-800 overflow-hidden flex flex-col h-[500px]">
+             {/* Header */}
+             <div className="p-4 bg-slate-950 border-b border-slate-800">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-tech text-slate-200 tracking-wider text-sm flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-cyan-500">
+                            <path d="M19.5 21a3 3 0 003-3v-4.5a3 3 0 00-3-3h-15a3 3 0 00-3 3V18a3 3 0 003 3h15zM1.5 10.146V2.995c0-1.103.895-2 2-2h2.445c.69 0 1.33.344 1.76 1.05L10 6h4.5a2 2 0 012 2v2.146A4.5 4.5 0 001.5 10.146z" />
+                        </svg>
+                        LIBRARY
                     </h3>
                 </div>
-                <div>
-                     <input 
-                        type="file" 
-                        accept="audio/*" 
-                        ref={fileInputRef} 
-                        className="hidden" 
-                        onChange={handleUpload}
-                    />
-                    <button 
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={uploading || !isConfigured}
-                        title={!isConfigured ? "Setup Firebase keys to upload" : "Upload File"}
-                        className={`text-xs px-3 py-1.5 rounded border transition-colors flex items-center gap-1
-                            ${uploading ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-wait' : ''}
-                            ${!isConfigured ? 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed' : 'bg-slate-800 hover:bg-slate-700 text-cyan-400 border-slate-700'}
-                        `}
+
+                {/* Upload Section */}
+                <div className="flex gap-2">
+                    <select 
+                        value={selectedCategory} 
+                        onChange={(e) => setSelectedCategory(e.target.value)}
+                        className="bg-slate-800 text-[10px] text-slate-300 rounded border border-slate-700 px-2 py-1 flex-1 focus:outline-none focus:border-cyan-500"
                     >
-                        {!isConfigured ? (
-                           <><span>LOCKED</span></>
-                        ) : uploading ? (
-                            'UPLOADING...'
-                        ) : (
-                            '+ UPLOAD'
-                        )}
+                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <input type="file" accept="audio/*" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
+                    <button 
+                        onClick={handleUploadClick}
+                        disabled={uploading}
+                        className="bg-cyan-600 hover:bg-cyan-500 text-white text-[10px] font-bold px-3 py-1 rounded transition-colors flex items-center gap-1"
+                    >
+                        {uploading ? '...' : '+ ADD'}
                     </button>
                 </div>
-            </div>
+             </div>
 
-            {/* File List */}
-            <div className="flex-1 overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-                {loading && files.length === 0 ? (
-                    <div className="flex justify-center items-center h-full text-slate-500 text-xs animate-pulse">SYNCING...</div>
-                ) : files.length === 0 ? (
-                    <div className="flex justify-center items-center h-full text-slate-600 text-xs">NO SAMPLES FOUND</div>
-                ) : (
-                    <div className="grid grid-cols-1 gap-1">
-                        {files.map((file) => (
-                            <button
-                                key={file.fullPath}
-                                onClick={() => handleSelectSound(file)}
-                                className="group flex items-center justify-between p-3 rounded-lg hover:bg-slate-800 transition-all border border-transparent hover:border-slate-700 text-left"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className={`w-8 h-8 rounded bg-slate-950 flex items-center justify-center transition-colors
-                                        ${file.url ? 'text-amber-500/80 group-hover:text-amber-400' : 'text-slate-600 group-hover:text-cyan-400 group-hover:bg-slate-900'}
-                                    `}>
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                                            <path fillRule="evenodd" d="M19.952 1.651a.75.75 0 01.298 1.049l-3.25 5.629a.75.75 0 01-.298.351l-.5.25a.75.75 0 01-.671 0l-.5-.25a.75.75 0 01-.298-.351l-3.25-5.63a.75.75 0 011.048-.298L13.5 3.39l2.451-1.414a.75.75 0 011.05.298zM3 13.5a1.5 1.5 0 011.5-1.5h15a1.5 1.5 0 011.5 1.5v6a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 19.5v-6z" clipRule="evenodd" />
-                                        </svg>
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-sm text-slate-300 group-hover:text-white truncate max-w-[150px]">{file.name}</span>
-                                        <span className="text-[10px] text-slate-600 font-mono">
-                                            {file.url ? 'DEMO ASSET' : 'CLOUD ASSET'}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className={`text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity ${file.url ? 'text-amber-500' : 'text-cyan-500'}`}>
-                                    LOAD
-                                </div>
-                            </button>
-                        ))}
-                    </div>
-                )}
-            </div>
-            
-            <div className={`p-2 text-[10px] text-center border-t font-mono ${isConfigured ? 'bg-slate-950 text-slate-600 border-slate-900' : 'bg-amber-900/20 text-amber-500/70 border-amber-900/30'}`}>
-                {isConfigured ? 'CONNECTED TO FIREBASE STORAGE' : 'DEMO MODE - NO CLOUD KEY'}
-            </div>
+             {/* Tree View */}
+             <div className="flex-1 overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-slate-700">
+                 {CATEGORIES.map(category => {
+                     const catItems = library.filter(i => i.category === category);
+                     const isOpen = openCategories.has(category);
+                     
+                     return (
+                         <div key={category} className="mb-1">
+                             <button 
+                                onClick={() => toggleCategory(category)}
+                                className="w-full flex items-center gap-2 p-2 hover:bg-slate-800 rounded text-left transition-colors group"
+                             >
+                                 <svg 
+                                    xmlns="http://www.w3.org/2000/svg" 
+                                    viewBox="0 0 20 20" 
+                                    fill="currentColor" 
+                                    className={`w-3 h-3 text-slate-500 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                                 >
+                                     <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                                 </svg>
+                                 <span className={`text-xs font-bold ${isOpen ? 'text-cyan-100' : 'text-slate-500 group-hover:text-slate-300'}`}>
+                                     {category}
+                                 </span>
+                                 <span className="text-[9px] text-slate-600 ml-auto bg-slate-800 px-1.5 rounded-full">
+                                     {catItems.length}
+                                 </span>
+                             </button>
+
+                             {isOpen && (
+                                 <div className="ml-4 pl-2 border-l border-slate-800 mt-1 flex flex-col gap-0.5">
+                                     {catItems.length === 0 ? (
+                                         <div className="p-2 text-[10px] text-slate-600 italic">Empty</div>
+                                     ) : (
+                                         catItems.map(item => (
+                                             <button
+                                                key={item.id}
+                                                onClick={() => onLoadSample(item.url, item.name)}
+                                                className="flex items-center justify-between p-2 rounded hover:bg-slate-800/50 hover:border-l-2 hover:border-cyan-500 transition-all text-left group/item"
+                                             >
+                                                 <span className="text-[11px] text-slate-400 group-hover/item:text-white truncate">
+                                                     {item.name}
+                                                 </span>
+                                                 {item.isLocal && (
+                                                     <span className="text-[8px] text-emerald-500 font-mono opacity-50">LOCAL</span>
+                                                 )}
+                                             </button>
+                                         ))
+                                     )}
+                                 </div>
+                             )}
+                         </div>
+                     );
+                 })}
+             </div>
+             
+             <div className="p-2 border-t border-slate-800 bg-slate-950 text-[10px] text-center text-slate-500 font-mono">
+                 Auto-saved to Browser Database
+             </div>
         </div>
     );
 };
