@@ -21,21 +21,23 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
     smartChordMode,
     splitPoint
 }) => {
-    // Initialize size based on screen width to prevent "barcode" keys on mobile
+    // Initialize size based on screen width
+    // Use smaller range for mobile to avoid thin keys
     const [size, setSize] = useState<KeyboardSize>(() => {
         if (typeof window !== 'undefined') {
-            return window.innerWidth < 600 ? 49 : 61;
+            return window.innerWidth < 640 ? 49 : 61;
         }
         return 61;
     });
 
-    // Update on resize/orientation change
     useEffect(() => {
         const handleResize = () => {
-            if (window.innerWidth < 600) setSize(49);
+            // Aggressively switch to 49 keys on anything tablet-sized or smaller
+            if (window.innerWidth < 768) setSize(49);
             else setSize(61);
         };
         window.addEventListener('resize', handleResize);
+        handleResize(); // trigger once on mount
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
@@ -62,7 +64,6 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
         return `${note}${octave}`;
     };
 
-    // Generate keys
     const keys = [];
     for (let i = start; i <= end; i++) {
         keys.push({ midi: i, black: isBlackKey(i), label: getNoteLabel(i) });
@@ -76,7 +77,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
     return (
         <div className="flex flex-col h-full w-full gap-1 md:gap-2 select-none touch-none">
             
-            {/* Control Strip for Keyboard */}
+            {/* Control Strip */}
             <div className="flex-none flex justify-between items-center bg-slate-900/80 p-1 rounded border border-slate-800 backdrop-blur-sm z-30">
                 <div className="flex gap-1">
                     {[49, 61, 76, 88].map((s) => (
@@ -96,9 +97,9 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                 )}
             </div>
 
-            {/* Keyboard & Wheels Container */}
+            {/* Main Area */}
             <div className="flex-1 flex gap-1 md:gap-2 min-h-0 relative">
-                {/* Wheels - Hidden on very small screens if needed, or made smaller */}
+                {/* Wheels */}
                 <div className="w-8 md:w-16 flex-none bg-slate-900 rounded border border-slate-700 flex flex-col p-0.5 md:p-1 gap-1">
                      <div className="flex-1 relative bg-slate-950 rounded border border-slate-800 overflow-hidden">
                         <input type="range" min="-1" max="1" step="0.01" defaultValue="0" 
@@ -118,7 +119,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                      </div>
                 </div>
 
-                {/* Keys Area */}
+                {/* Keys Container */}
                 <div className="flex-1 bg-black rounded border-t-2 md:border-t-4 border-slate-800 relative overflow-hidden flex shadow-inner">
                     {/* White Keys */}
                     {keys.filter(k => !k.black).map((k) => {
@@ -128,7 +129,8 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                         return (
                             <div 
                                 key={k.midi}
-                                className={`flex-1 h-full border-r border-slate-800/50 rounded-b-sm flex flex-col justify-end items-center pb-2 select-none relative
+                                // Reduced border width on mobile to 1px or less logic
+                                className={`flex-1 h-full border-r-[0.5px] md:border-r border-slate-800/50 rounded-b-sm flex flex-col justify-end items-center pb-2 select-none relative
                                     ${isActive ? 'bg-cyan-400' : 'bg-slate-100 active:bg-slate-200'}
                                     ${isChordZone ? 'bg-amber-50' : ''}
                                 `}
@@ -152,7 +154,6 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                             const whiteKeysTotal = arr.filter(x => !x.black).length;
                             const whiteKeysBefore = arr.slice(0, i).filter(x => !x.black).length;
                             
-                            // Width of a white key in %
                             const whiteKeyWidth = 100 / whiteKeysTotal;
                             const leftPos = (whiteKeysBefore * whiteKeyWidth) - (whiteKeyWidth * 0.35); 
                             const width = whiteKeyWidth * 0.7;

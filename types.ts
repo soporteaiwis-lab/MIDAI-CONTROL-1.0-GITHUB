@@ -48,6 +48,20 @@ export interface ToneSynth {
     dispose: () => void;
 }
 
+export interface ToneSampler {
+    toDestination: () => ToneSampler;
+    connect: (node: any) => ToneSampler;
+    triggerAttack: (note: string | string[] | number, time?: number, velocity?: number) => void;
+    triggerRelease: (note: string | string[] | number, time?: number) => void;
+    triggerAttackRelease: (note: string | string[] | number, duration: string | number, time?: number, velocity?: number) => void;
+    releaseAll: (time?: number) => void;
+    dispose: () => void;
+    volume: ToneSignal;
+    attack: number;
+    release: number;
+    loaded: boolean;
+}
+
 export interface ToneLoop {
     start: (time?: number | string) => void;
     stop: (time?: number | string) => void;
@@ -69,9 +83,16 @@ export interface ToneContext {
     rawContext: AudioContext; 
 }
 
+export interface ToneFrequencyClass {
+    toNote: () => string;
+    toFrequency: () => number;
+    toMidi: () => number;
+}
+
 export interface ToneType {
     start: () => Promise<void>;
     Player: new (url: string | ArrayBuffer | any, onload?: () => void) => TonePlayer;
+    Sampler: new (options: any) => ToneSampler;
     Filter: new (frequency: number, type: string) => ToneFilter;
     MembraneSynth: new (options?: any) => ToneSynth;
     NoiseSynth: new (options?: any) => ToneSynth;
@@ -82,6 +103,7 @@ export interface ToneType {
     context: ToneContext;
     loaded: () => Promise<void>;
     toFrequency: (note: string | number) => number;
+    Frequency: (value: string | number, units?: string) => ToneFrequencyClass;
     now: () => number;
 }
 
